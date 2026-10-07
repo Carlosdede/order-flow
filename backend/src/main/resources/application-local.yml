@@ -1,0 +1,5 @@
+spring:
+  datasource:
+    password: ${DB_PASSWORD:orderflow_local}
+  rabbitmq:
+    password: ${RABBITMQ_PASSWORD:orderflow_local}

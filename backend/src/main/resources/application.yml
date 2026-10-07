@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: orderflow
+  profiles:
+    default: local
+    group:
+      dev: local
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/orderflow}
+    username: ${DB_USERNAME:orderflow}
+    password: ${DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}
+      timeout: 3s
+      repositories:
+        enabled: false
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5673}
+    username: ${RABBITMQ_USERNAME:orderflow}
+    password: ${RABBITMQ_PASSWORD}
+    connection-timeout: 5s
+  modulith:
+    detection-strategy: explicitly-annotated
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,redis,rabbit
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
