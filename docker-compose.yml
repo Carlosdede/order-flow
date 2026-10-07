@@ -1,0 +1,109 @@
+name: orderflow
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: orderflow-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-orderflow}
+      POSTGRES_USER: ${DB_USERNAME:-orderflow}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-orderflow_local}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [orderflow]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: orderflow-redis
+    command: [redis-server, --appendonly, 'yes']
+    volumes:
+      - redis-data:/data
+    networks: [orderflow]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    container_name: orderflow-rabbitmq
+    hostname: orderflow-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-orderflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-orderflow_local}
+    ports:
+      - '127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672'
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks: [orderflow]
+    healthcheck:
+      test: [CMD-SHELL, 'rabbitmq-diagnostics -q ping && rabbitmq-diagnostics -q check_port_connectivity']
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: orderflow-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-orderflow}
+      DB_USERNAME: ${DB_USERNAME:-orderflow}
+      DB_PASSWORD: ${DB_PASSWORD:-orderflow_local}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-orderflow}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-orderflow_local}
+    ports:
+      - '127.0.0.1:${BACKEND_PORT:-8080}:8080'
+    networks: [orderflow]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://localhost:8080/actuator/health]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: orderflow-frontend
+    ports:
+      - '127.0.0.1:${FRONTEND_PORT:-3000}:8080'
+    networks: [orderflow]
+    depends_on:
+      backend: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/healthz]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+
+networks:
+  orderflow:
+    driver: bridge
